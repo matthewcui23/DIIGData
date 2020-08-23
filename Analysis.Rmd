@@ -1,0 +1,98 @@
+---
+title: "HireCases"
+author: "Matthew Cui"
+date: "8/21/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r initialization}
+library(tidyverse)
+library(scales)
+library(usmap)
+library(wordcloud)
+hires <- read_csv("New_Hire_DIIG_F20.csv")
+```
+
+```{r factoring}
+hires <- hires %>%
+  mutate_at(vars(EDUCATION_LEVEL_REQUIRED,
+            EXPERIENCE_REQUIRED_Y_N,
+            JOB_TITLE_SUBGROUP), factor)
+```
+
+Research question:
+
+```{r}
+glimpse(hires)
+```
+
+```{r}
+hires %>% 
+  count(CASE_STATUS) %>% 
+  mutate(prop = n/sum(n))
+
+ggplot(hires, mapping = aes(x = CASE_STATUS)) +
+  geom_bar() +
+  labs(x = "Count",
+       y = "Visa Case Status",
+       title = "A significant proportion of visa cases are approved") +
+  scale_y_continuous(labels = NULL)
+```
+
+```{r}
+certified_hires <- hires %>% 
+  filter(CASE_STATUS == "certified") %>% 
+  filter(VISA_CLASS == "H-1B" | VISA_CLASS == "E-3 Australian")
+```
+
+```{r}
+state_count <- certified_hires %>% 
+  count(WORK_STATE_ABBREVIATION) %>% 
+  select(WORK_STATE_ABBREVIATION, n) %>% 
+  rename(state = WORK_STATE_ABBREVIATION)
+
+plot_usmap(data = state_count, 
+           values = "n", 
+           color = "red") + 
+  scale_fill_continuous(name = "Number of Approved Cases",
+                        low = "white",
+                        high = "red",
+                        label = scales::comma) + 
+  theme(legend.position = "right") +
+  labs(title = "A significant number of approved visa candidates work in California")
+
+certified_hires %>% 
+  count(WORK_STATE) %>% 
+  arrange(desc(n)) %>% 
+  head(10)
+```
+
+## Comparing requirements of E-3 Australian and H1-B visa classes
+
+```{r}
+(average_wage <- certified_hires %>%
+  group_by(VISA_CLASS) %>% 
+  summarise(averagePay = mean(PAID_WAGE_PER_YEAR)))
+```
+
+```{r}
+job_dist <- certified_hires %>%
+  group_by(VISA_CLASS, JOB_TITLE_SUBGROUP) %>% 
+  count(VISA_CLASS) %>% 
+  mutate(proportion = n / sum(n))
+
+ggplot(job_dist, aes(x = JOB_TITLE_SUBGROUP, y = proportion)) +
+  geom_col() +
+  facet_grid(. ~ VISA_CLASS) +
+  coord_flip()
+```
+### How much do different degrees worth?
+```{r}
+lm_type_wage <-
+```

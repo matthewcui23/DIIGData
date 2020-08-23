@@ -5,6 +5,7 @@ date: "8/21/2020"
 output:
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -15,27 +16,26 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(scales)
 library(usmap)
-library(wordcloud)
+
 hires <- read_csv("New_Hire_DIIG_F20.csv")
 ```
 
 ```{r factoring}
 hires <- hires %>%
   mutate_at(vars(EDUCATION_LEVEL_REQUIRED,
-            EXPERIENCE_REQUIRED_Y_N,
-            JOB_TITLE_SUBGROUP), factor)
+                 VISA_CLASS,
+                 EXPERIENCE_REQUIRED_Y_N,
+                 JOB_TITLE_SUBGROUP), factor)
 ```
 
-Research question:
-
-```{r}
+```{r glimpse}
 glimpse(hires)
 ```
 
 ```{r}
 hires %>% 
   count(CASE_STATUS) %>% 
-  mutate(prop = n/sum(n))
+  mutate(prop = n / sum(n))
 
 ggplot(hires, mapping = aes(x = CASE_STATUS)) +
   geom_bar() +
@@ -45,13 +45,13 @@ ggplot(hires, mapping = aes(x = CASE_STATUS)) +
   scale_y_continuous(labels = NULL)
 ```
 
-```{r}
+```{r eda-filtering-visaclass}
 certified_hires <- hires %>% 
   filter(CASE_STATUS == "certified") %>% 
   filter(VISA_CLASS == "H-1B" | VISA_CLASS == "E-3 Australian")
 ```
 
-```{r}
+```{r eda-geographical-distrbution}
 state_count <- certified_hires %>% 
   count(WORK_STATE_ABBREVIATION) %>% 
   select(WORK_STATE_ABBREVIATION, n) %>% 
@@ -73,26 +73,96 @@ certified_hires %>%
   head(10)
 ```
 
-## Comparing requirements of E-3 Australian and H1-B visa classes
 
-```{r}
+```{r job-dist}
+(job_dist <- certified_hires %>%
+  group_by(VISA_CLASS) %>% 
+  count(JOB_TITLE_SUBGROUP) %>% 
+  mutate(proportion = n / sum(n)))
+
+ggplot(job_dist, aes(x = JOB_TITLE_SUBGROUP, y = proportion)) +
+  geom_col() +
+  facet_grid(. ~ VISA_CLASS) +
+  coord_flip() + 
+  labs(x = "Jobs",
+       y = "Proportion",
+       title = "E-3 and H-1B hires have similar job distributions")
+```
+
+
+
+```{r mean-wages}
 (average_wage <- certified_hires %>%
   group_by(VISA_CLASS) %>% 
   summarise(averagePay = mean(PAID_WAGE_PER_YEAR)))
 ```
 
-```{r}
-job_dist <- certified_hires %>%
-  group_by(VISA_CLASS, JOB_TITLE_SUBGROUP) %>% 
-  count(VISA_CLASS) %>% 
-  mutate(proportion = n / sum(n))
+```{r dist-jobs-wages}
+(avg_wage_alloccupation <- certified_hires %>% 
+   group_by(VISA_CLASS, JOB_TITLE_SUBGROUP) %>% 
+   summarise(averagePayPerOccupation = mean(PAID_WAGE_PER_YEAR)))
 
-ggplot(job_dist, aes(x = JOB_TITLE_SUBGROUP, y = proportion)) +
+ggplot(avg_wage_alloccupation, aes(x = VISA_CLASS, y = averagePayPerOccupation)) +
+  geom_col(aes(fill = VISA_CLASS)) +
+  facet_grid(. ~ JOB_TITLE_SUBGROUP) +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  labs(x = "Jobs",
+       y = "Average Wage",
+       title = "Despite similar distribution of jobs",
+       subtitle = "E-3 Australian visa holders have a higher overall wage",
+       fill = "Visa class")
+```
+
+https://www.dol.gov/agencies/eta/foreign-labor/wages/prevailing-wage
+
+## Considering the top 3 hiring firms for SWE
+
+```{r filtering-swe}
+certified_hires %>% 
+  filter(JOB_TITLE_SUBGROUP == "software engineer") %>% 
+  count(EMPLOYER_NAME) %>% 
+  arrange(desc(n)) %>% 
+  head(4)
+```
+```{r h1b-e3-lower-prevailing}
+(top3_hires <- certified_hires %>% 
+  filter(EMPLOYER_NAME == "GOOGLE INC." | EMPLOYER_NAME == "MICROSOFT CORPORATION" | EMPLOYER_NAME == "INTEL CORPORATION") %>% 
+  filter(JOB_TITLE_SUBGROUP == "software engineer") %>% 
+  group_by(EMPLOYER_NAME, VISA_CLASS) %>% 
+  summarise(avgSWEWage = mean(PAID_WAGE_PER_YEAR))) #fujitsu didnt hire e-3
+
+ggplot(top3_hires, aes(x = VISA_CLASS, y = avgSWEWage, fill = VISA_CLASS)) +
   geom_col() +
-  facet_grid(. ~ VISA_CLASS) +
-  coord_flip()
+  facet_grid(. ~ EMPLOYER_NAME) +
+  labs(x = "Visa class",
+       y = "Average software engineer wage",
+       title = "H-1B visa workers get paid less on average than E-3 visa holders",
+       subtitle = "as software engineers in three companies with the most international hires") + 
+  geom_hline(data = data.frame(yint = 127671 , EMPLOYER_NAME= "GOOGLE INC."), 
+             aes(yintercept = yint), linetype = "dotted") + 
+  geom_hline(data = data.frame(yint = 103037 , EMPLOYER_NAME= "INTEL CORPORATION"), 
+             aes(yintercept = yint), linetype = "dotted") + #2016 statistic, calculated to 2015 terms after adjusting for inflation rate of 2.1%
+  geom_hline(data = data.frame(yint = 145522 , EMPLOYER_NAME= "MICROSOFT CORPORATION"), 
+             aes(yintercept = yint), linetype = "dotted") #average between senior and intro level SWE
 ```
-### How much do different degrees worth?
-```{r}
-lm_type_wage <-
+
+
+
+http://computerengineeringsalaryuk.com/google-software-engineer-salary-2015/
+https://www.businessinsider.com/18-companies-that-pay-software-engineers-over-110000-2016-11#:~:text=At%20Intel%2C%20a%20software%20engineer,average%2C%20%24105%2C201%20on%20base%20salary.
+https://www.businessinsider.com/what-you-can-earn-working-at-microsoft-2015-4#senior-software-development-engineer-176459-4
+
+
+```{r pct}
+corporate_averages <- c(127671, 103037, 145522)
+
+percentage_compare <- top3_hires %>% 
+  filter(VISA_CLASS == "H-1B")
+percentage_compare$true_salaries <- corporate_averages
+percentage_compare$percentageChange <- c(1.00, 9.63, 15.96)
+
+percentage_compare
 ```
+
+https://apnews.com/afs:Content:873580003
